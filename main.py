@@ -1,75 +1,108 @@
-import feedparser
-import requests
 import os
 import time
+import requests
+import feedparser
+import re
+from duckduckgo_search import DDGS
 
-# CONFIGURACION
+# --- CONFIGURACIÓN ---
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
-# Busqueda: Chacarita + palabras clave - retweets (Codificado para URL)
-QUERY = "Chacarita%20-filter%3Aretweets"
 
-# Lista de espejos de Nitter (si uno falla, prueba el otro)
+# Búsquedas
+QUERY_NITTER = "Chacarita%20-filter%3Aretweets" # Formato URL para RSS
+QUERY_DDG = "site:twitter.com Chacarita"         # Formato Buscador
+
+# Servidores Nitter (Por si uno falla)
 NITTER_INSTANCES = [
     "https://nitter.privacydev.net",
     "https://nitter.poast.org",
     "https://nitter.lucabased.xyz",
-    "https://nitter.salastil.com",
     "https://xcancel.com"
-]
 ]
 
 def enviar_telegram(texto):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": texto, "parse_mode": "Markdown"})
+    try:
+        requests.post(url, data={"chat_id": CHAT_ID, "text": texto, "parse_mode": "Markdown"})
+    except Exception as e:
+        print(f"❌ Error enviando a Telegram: {e}")
 
-def leer_ultimo_id():
-    if os.path.exists("last_id.txt"):
-        with open("last_id.txt", "r") as f:
-            return f.read().strip()
-    return None
+# --- MEMORIA (Para no repetir) ---
+def leer_historial():
+    if os.path.exists("history_ids.txt"):
+        with open("history_ids.txt", "r") as f:
+            return set(f.read().splitlines())
+    return set()
 
-def guardar_ultimo_id(id_tweet):
-    with open("last_id.txt", "w") as f:
-        f.write(id_tweet)
+def guardar_historial(tweet_id):
+    with open("history_ids.txt", "a") as f:
+        f.write(f"{tweet_id}\n")
 
-def main():
-    ultimo_visto = leer_ultimo_id()
-    print(f"👀 Último tweet visto: {ultimo_visto}")
+def extraer_id(url):
+    # Busca el número largo en la URL (el ID del tweet)
+    match = re.search(r'/status/(\d+)', url)
+    return match.group(1) if match else None
 
+# --- ESTRATEGIA 1: NITTER (RSS) ---
+def buscar_nitter(vistos):
+    print("--- 1. Probando vía Nitter ---")
     feed = None
-    # Intentamos con cada servidor hasta que uno ande
     for instance in NITTER_INSTANCES:
         try:
-            url_feed = f"{instance}/search/rss?f=tweets&q={QUERY}"
-            print(f"Intentando conectar con {instance}...")
-            feed = feedparser.parse(url_feed)
+            url = f"{instance}/search/rss?f=tweets&q={QUERY_NITTER}"
+            print(f"Probando {instance}...")
+            feed = feedparser.parse(url)
             if feed.entries:
-                break # Si encontramos tweets, salimos del bucle
+                break
         except:
             continue
-    
+            
     if not feed or not feed.entries:
-        print("⚠️ No se pudo conectar a ningún servidor o no hay tweets.")
+        print("⚠️ Nitter falló o no trajo nada.")
         return
 
-    # Recorremos los tweets del más viejo al más nuevo
-    nuevos_tweets = []
     for entry in reversed(feed.entries):
-        # El ID en RSS suele ser la URL
-        tweet_id = entry.link
+        tid = extraer_id(entry.link)
+        if tid and tid not in vistos:
+            print(f"✅ Nuevo (Nitter): {tid}")
+            msg = f"🔴 *ALERTA (Vía Nitter)*\n\n{entry.title}\n\n🔗 {entry.link}"
+            enviar_telegram(msg)
+            guardar_historial(tid)
+            vistos.add(tid)
+            time.sleep(1)
+
+# --- ESTRATEGIA 2: DUCKDUCKGO ---
+def buscar_ddg(vistos):
+    print("--- 2. Probando vía DuckDuckGo ---")
+    try:
+        # Busca resultados de la última hora ('h')
+        results = DDGS().text(QUERY_DDG, region='ar-es', timelimit='h', max_results=10)
         
-        # Si es un tweet nuevo (y no es el mismo que el último guardado)
-        if tweet_id != ultimo_visto:
-            # Chequeo simple para no mandar 20 tweets la primera vez
-            if ultimo_visto is not None: 
-                msg = f"🔴 *NOVEDAD CHACA*\n\n{entry.title}\n\n🔗 {entry.link}"
-                enviar_telegram(msg)
-                time.sleep(1) # Espera 1 seg para no saturar
+        for r in results:
+            link = r.get('href', '')
+            tid = extraer_id(link)
             
-            # Actualizamos el último visto al actual
-            ultimo_visto = tweet_id
-            guardar_ultimo_id(tweet_id)
+            # Solo procesamos si es un link de twitter válido y tiene ID
+            if tid and ("twitter.com" in link or "x.com" in link):
+                if tid not in vistos:
+                    print(f"✅ Nuevo (DDG): {tid}")
+                    titulo = r.get('title', 'Tweet')
+                    msg = f"🔵 *ALERTA (Vía Buscador)*\n\n📝 {titulo}\n\n🔗 {link}"
+                    enviar_telegram(msg)
+                    guardar_historial(tid)
+                    vistos.add(tid)
+                    time.sleep(2)
+    except Exception as e:
+        print(f"⚠️ Error en DuckDuckGo: {e}")
+
+# --- MAESTRO DE ORQUESTA ---
+def main():
+    vistos = leer_historial()
+    
+    # Ejecuta las dos estrategias
+    buscar_nitter(vistos)
+    buscar_ddg(vistos)
 
 if __name__ == "__main__":
     main()
