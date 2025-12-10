@@ -3,7 +3,10 @@ name: Alerta Chaca Bot
 on:
   schedule:
     - cron: '*/20 * * * *' # Ejecutar cada 20 minutos
-  workflow_dispatch: # Para poder ejecutarlo manual si querés probar
+  workflow_dispatch: # Para ejecutar manual
+
+permissions:
+  contents: write # Permiso vital para guardar el archivo
 
 jobs:
   run-scraper:
@@ -27,10 +30,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
         
-      - name: Guardar estado (para no repetir noticias)
+      - name: Guardar estado (Memoria)
         run: |
           git config --global user.name 'Bot Chaca'
           git config --global user.email 'bot@noreply.github.com'
-          git add last_id.txt || true
-          git commit -m "Actualizar ultimo tweet visto" || true
+          git add history_ids.txt || true
+          git commit -m "Actualizar memoria" || true
           git push
