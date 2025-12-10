@@ -7,7 +7,7 @@ import time
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 # Busqueda: Chacarita + palabras clave - retweets (Codificado para URL)
-QUERY = "Chacarita%20(refuerzo%20OR%20firma%20OR%20incorpora%20OR%20interesa)%20-filter%3Aretweets"
+QUERY = "Chacarita%20-filter%3Aretweets"
 
 # Lista de espejos de Nitter (si uno falla, prueba el otro)
 NITTER_INSTANCES = [
