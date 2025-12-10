@@ -15,6 +15,7 @@ QUERY_DDG = "site:twitter.com Chacarita"         # Formato Buscador
 
 # Servidores Nitter (Por si uno falla)
 NITTER_INSTANCES = [
+    "https://nitter.net",
     "https://nitter.privacydev.net",
     "https://nitter.poast.org",
     "https://nitter.lucabased.xyz",
