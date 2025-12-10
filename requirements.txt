@@ -3,3 +3,4 @@ feedparser
 duckduckgo-search
 typing_extensions
 lxml
+ntscraper
