@@ -8,10 +8,10 @@ from bs4 import BeautifulSoup
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
-QUERY_TWITTER = "Chacarita"
-QUERY_GOOGLE = "Chacarita"
 
-# Headers para "disfrazarnos" de navegador real
+# Búsqueda amplia (No solo Twitter)
+QUERY_GENERAL = "Chacarita" 
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
@@ -33,53 +33,41 @@ def guardar_historial(dato):
     with open("history_ids.txt", "a") as f:
         f.write(f"{dato}\n")
 
-def extraer_id(url):
-    match = re.search(r'/status/(\d+)', url)
-    return match.group(1) if match else url
-
-# --- ESTRATEGIA 1: BING SEARCH (Disfrazado) ---
+# --- 1. BING WEB (Búsqueda General) ---
 def buscar_bing(vistos):
-    print("--- 1. Probando Bing Search (Modo Camaleón) ---")
+    print("--- 1. Probando Bing Web ---")
     try:
-        # Buscamos en Bing: site:twitter.com Chacarita
-        # &filters=ex1%3a%22ez1%22 fuerza resultados de las últimas 24hs
-        url = f"https://www.bing.com/search?q=site%3Atwitter.com+{QUERY_TWITTER}&filters=ex1%3a%22ez1%22"
+        # Buscamos noticias recientes en la web general
+        # q=Chacarita + filtro de ultimas 24hs
+        url = f"https://www.bing.com/search?q={QUERY_GENERAL}&filters=ex1%3a%22ez1%22"
         
         response = requests.get(url, headers=HEADERS, timeout=10)
-        
-        if response.status_code != 200:
-            print(f"⚠️ Bing nos rechazó con código: {response.status_code}")
-            return
-
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Buscamos todos los links de la página
-        links = soup.find_all('a', href=True)
-        encontrados = 0
+        # Buscamos resultados de búsqueda (clase 'b_algo' es comun en Bing)
+        resultados = soup.find_all('li', class_='b_algo')
         
-        for link in links:
-            href = link['href']
-            # Filtramos solo los que son tweets reales
-            if "twitter.com" in href and "/status/" in href:
-                tid = extraer_id(href)
+        if not resultados:
+            print("   ↳ Bing conectó pero no trajo resultados frescos.")
+        
+        for res in resultados:
+            link_tag = res.find('a', href=True)
+            if link_tag:
+                link = link_tag['href']
+                titulo = link_tag.get_text()
                 
-                if tid not in vistos:
-                    titulo = link.get_text()[:100] # Primeros 100 caracteres del titulo
-                    print(f"✅ Tweet en Bing: {href}")
-                    msg = f"🔍 *TWEET (Vía Bing)*\n\n📝 {titulo}...\n\n🔗 {href}"
+                if link not in vistos:
+                    print(f"✅ Novedad Bing: {titulo}")
+                    msg = f"🔍 *WEB (Bing)*\n\n📝 {titulo}\n\n🔗 {link}"
                     enviar_telegram(msg)
-                    guardar_historial(tid)
-                    vistos.add(tid)
-                    encontrados += 1
+                    guardar_historial(link)
+                    vistos.add(link)
                     time.sleep(2)
-        
-        if encontrados == 0:
-            print("   ↳ Bing conectó, pero no vio tweets nuevos.")
 
     except Exception as e:
         print(f"❌ Error en Bing: {e}")
 
-# --- ESTRATEGIA 2: GOOGLE NEWS (El Tanque) ---
+# --- 2. GOOGLE NEWS (El Tanque) ---
 def buscar_google(vistos):
     print("--- 2. Probando Google News ---")
     try:
