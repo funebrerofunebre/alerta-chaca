@@ -3,7 +3,7 @@ import time
 import requests
 import feedparser
 import re
-from duckduckgo_search import DDGS
+from bs4 import BeautifulSoup
 
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ['TELEGRAM_TOKEN']
@@ -11,14 +11,10 @@ CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 QUERY_TWITTER = "Chacarita"
 QUERY_GOOGLE = "Chacarita"
 
-# Lista de Puentes RSSHub (Si uno falla, probamos el siguiente)
-RSSHUB_INSTANCES = [
-    "https://rsshub.app",
-    "https://rsshub.feeddd.org",
-    "https://rsshub.lihaoyu.cn",
-    "https://rss.shab.fun",
-    "https://rsshub.blue"
-]
+# Headers para "disfrazarnos" de navegador real
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
 
 def enviar_telegram(texto):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -37,77 +33,59 @@ def guardar_historial(dato):
     with open("history_ids.txt", "a") as f:
         f.write(f"{dato}\n")
 
-# --- ESTRATEGIA 1: RSSHUB (El Puente) ---
-def buscar_rsshub(vistos):
-    print("--- 1. Probando Puentes RSSHub ---")
-    feed = None
-    
-    # Probamos cada servidor de la lista
-    for instance in RSSHUB_INSTANCES:
-        try:
-            # Ruta para buscar keyword en Twitter
-            url = f"{instance}/twitter/keyword/{QUERY_TWITTER}"
-            print(f"🔌 Probando conexión con {instance}...")
-            
-            # Timeout corto (5s) para no perder tiempo si está caído
-            feed = feedparser.parse(url, agent="Mozilla/5.0")
-            
-            # Si el feed tiene entradas o un status 200, es que conectó
-            if feed.entries:
-                print(f"✅ ¡Conectado a {instance}!")
-                break
-            elif feed.status == 200 and not feed.entries:
-                 print(f"⚠ Conectó a {instance} pero vino vacío (sin tweets nuevos).")
-                 # Si conecta pero está vacío, cortamos acá para no seguir probando al pedo
-                 return 
-        except:
-            continue
-            
-    if not feed or not feed.entries:
-        print("❌ Todos los puentes RSSHub fallaron o están bloqueados.")
-        return
+def extraer_id(url):
+    match = re.search(r'/status/(\d+)', url)
+    return match.group(1) if match else url
 
-    # Si llegamos acá, tenemos tweets
-    for entry in feed.entries:
-        link = entry.link
-        if link not in vistos:
-            print(f"🐦 Nuevo Tweet: {entry.title}")
-            # Limpiamos un poco el título si viene sucio
-            texto = entry.title.replace(" - Twitter Search / X", "")
-            
-            msg = f"🐦 *TWEET (Vía RSSHub)*\n\n📝 {texto}\n\n🔗 {link}"
-            enviar_telegram(msg)
-            guardar_historial(link)
-            vistos.add(link)
-            time.sleep(1)
-
-# --- ESTRATEGIA 2: DUCKDUCKGO (Backup) ---
-def buscar_ddg(vistos):
-    print("--- 2. Probando DuckDuckGo (Backup) ---")
+# --- ESTRATEGIA 1: BING SEARCH (Disfrazado) ---
+def buscar_bing(vistos):
+    print("--- 1. Probando Bing Search (Modo Camaleón) ---")
     try:
-        # Le saqué el límite de tiempo estricto a ver si así muestra algo
-        results = DDGS().text(f"site:twitter.com {QUERY_TWITTER}", region='ar-es', max_results=5)
-        if not results:
-            print("↳ Nada por acá.")
+        # Buscamos en Bing: site:twitter.com Chacarita
+        # &filters=ex1%3a%22ez1%22 fuerza resultados de las últimas 24hs
+        url = f"https://www.bing.com/search?q=site%3Atwitter.com+{QUERY_TWITTER}&filters=ex1%3a%22ez1%22"
         
-        for r in results:
-            link = r.get('href', '')
-            if "twitter.com" in link or "x.com" in link:
-                if link not in vistos:
-                    msg = f"🔍 *TWEET (Vía Buscador)*\n\n📝 {r.get('title', 'Tweet')}\n\n🔗 {link}"
-                    enviar_telegram(msg)
-                    guardar_historial(link)
-                    vistos.add(link)
-                    time.sleep(2)
-    except Exception as e:
-        print(f"⚠️ DDG Falló: {e}")
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        
+        if response.status_code != 200:
+            print(f"⚠️ Bing nos rechazó con código: {response.status_code}")
+            return
 
-# --- ESTRATEGIA 3: GOOGLE NEWS (El Tanque) ---
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Buscamos todos los links de la página
+        links = soup.find_all('a', href=True)
+        encontrados = 0
+        
+        for link in links:
+            href = link['href']
+            # Filtramos solo los que son tweets reales
+            if "twitter.com" in href and "/status/" in href:
+                tid = extraer_id(href)
+                
+                if tid not in vistos:
+                    titulo = link.get_text()[:100] # Primeros 100 caracteres del titulo
+                    print(f"✅ Tweet en Bing: {href}")
+                    msg = f"🔍 *TWEET (Vía Bing)*\n\n📝 {titulo}...\n\n🔗 {href}"
+                    enviar_telegram(msg)
+                    guardar_historial(tid)
+                    vistos.add(tid)
+                    encontrados += 1
+                    time.sleep(2)
+        
+        if encontrados == 0:
+            print("   ↳ Bing conectó, pero no vio tweets nuevos.")
+
+    except Exception as e:
+        print(f"❌ Error en Bing: {e}")
+
+# --- ESTRATEGIA 2: GOOGLE NEWS (El Tanque) ---
 def buscar_google(vistos):
-    print("--- 3. Probando Google News ---")
+    print("--- 2. Probando Google News ---")
     try:
         url = f"https://news.google.com/rss/search?q={QUERY_GOOGLE}+when:1d&hl=es-419&gl=AR&ceid=AR:es-419"
         feed = feedparser.parse(url)
+        
         for entry in reversed(feed.entries):
             link = entry.link
             if link not in vistos:
@@ -122,8 +100,7 @@ def buscar_google(vistos):
 
 def main():
     vistos = leer_historial()
-    buscar_rsshub(vistos)
-    buscar_ddg(vistos)
+    buscar_bing(vistos)
     buscar_google(vistos)
 
 if __name__ == "__main__":
