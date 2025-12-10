@@ -77,7 +77,7 @@ def buscar_ddg(vistos):
     print("--- 2. Probando vía DuckDuckGo ---")
     try:
         # Busca resultados de la última hora ('h')
-        results = DDGS().text(QUERY_DDG, region='ar-es', timelimit='h', max_results=10)
+        results = DDGS().text(QUERY_DDG, region='ar-es', timelimit='d', max_results=10)
         
         for r in results:
             link = r.get('href', '')
