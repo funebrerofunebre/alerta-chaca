@@ -11,10 +11,12 @@ QUERY = "Chacarita%20-filter%3Aretweets"
 
 # Lista de espejos de Nitter (si uno falla, prueba el otro)
 NITTER_INSTANCES = [
-    "https://nitter.net",
-    "https://nitter.cz",
     "https://nitter.privacydev.net",
-    "https://nitter.projectsegfau.lt"
+    "https://nitter.poast.org",
+    "https://nitter.lucabased.xyz",
+    "https://nitter.salastil.com",
+    "https://xcancel.com"
+]
 ]
 
 def enviar_telegram(texto):
