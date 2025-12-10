@@ -1,3 +1,5 @@
 requests
 feedparser
 duckduckgo-search
+typing_extensions
+lxml
