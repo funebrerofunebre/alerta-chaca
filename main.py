@@ -10,10 +10,12 @@ TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 
 # Búsquedas
-QUERY_NITTER = "Chacarita%20-filter%3Aretweets" # Formato URL para RSS
-QUERY_DDG = "site:twitter.com Chacarita"         # Formato Buscador
+QUERY_NITTER = "Chacarita%20-filter%3Aretweets"
+QUERY_DDG = "site:twitter.com Chacarita"
+# Google: Busca noticias de Chacarita de las últimas 24hs
+QUERY_GOOGLE = "Chacarita" 
 
-# Servidores Nitter (Por si uno falla)
+# Servidores Nitter
 NITTER_INSTANCES = [
     "https://nitter.net",
     "https://nitter.privacydev.net",
@@ -29,81 +31,87 @@ def enviar_telegram(texto):
     except Exception as e:
         print(f"❌ Error enviando a Telegram: {e}")
 
-# --- MEMORIA (Para no repetir) ---
 def leer_historial():
     if os.path.exists("history_ids.txt"):
         with open("history_ids.txt", "r") as f:
             return set(f.read().splitlines())
     return set()
 
-def guardar_historial(tweet_id):
+def guardar_historial(dato):
     with open("history_ids.txt", "a") as f:
-        f.write(f"{tweet_id}\n")
+        f.write(f"{dato}\n")
 
 def extraer_id(url):
-    # Busca el número largo en la URL (el ID del tweet)
     match = re.search(r'/status/(\d+)', url)
-    return match.group(1) if match else None
+    return match.group(1) if match else url 
 
-# --- ESTRATEGIA 1: NITTER (RSS) ---
+# --- 1. NITTER ---
 def buscar_nitter(vistos):
-    print("--- 1. Probando vía Nitter ---")
+    print("--- 1. Probando Nitter ---")
     feed = None
     for instance in NITTER_INSTANCES:
         try:
             url = f"{instance}/search/rss?f=tweets&q={QUERY_NITTER}"
-            print(f"Probando {instance}...")
             feed = feedparser.parse(url)
             if feed.entries:
+                print(f"✅ Conectado a {instance}")
                 break
         except:
             continue
             
-    if not feed or not feed.entries:
-        print("⚠️ Nitter falló o no trajo nada.")
-        return
+    if feed and feed.entries:
+        for entry in reversed(feed.entries):
+            tid = extraer_id(entry.link)
+            if tid not in vistos:
+                msg = f"🔴 *TWITTER (Nitter)*\n\n{entry.title}\n\n🔗 {entry.link}"
+                enviar_telegram(msg)
+                guardar_historial(tid)
+                vistos.add(tid)
+                time.sleep(1)
 
-    for entry in reversed(feed.entries):
-        tid = extraer_id(entry.link)
-        if tid and tid not in vistos:
-            print(f"✅ Nuevo (Nitter): {tid}")
-            msg = f"🔴 *ALERTA (Vía Nitter)*\n\n{entry.title}\n\n🔗 {entry.link}"
-            enviar_telegram(msg)
-            guardar_historial(tid)
-            vistos.add(tid)
-            time.sleep(1)
-
-# --- ESTRATEGIA 2: DUCKDUCKGO ---
+# --- 2. DUCKDUCKGO ---
 def buscar_ddg(vistos):
-    print("--- 2. Probando vía DuckDuckGo ---")
+    print("--- 2. Probando DuckDuckGo ---")
     try:
-        # Busca resultados de la última hora ('h')
         results = DDGS().text(QUERY_DDG, region='ar-es', timelimit='d', max_results=10)
-        
         for r in results:
             link = r.get('href', '')
             tid = extraer_id(link)
-            
-            # Solo procesamos si es un link de twitter válido y tiene ID
-            if tid and ("twitter.com" in link or "x.com" in link):
+            if "twitter.com" in link or "x.com" in link:
                 if tid not in vistos:
-                    print(f"✅ Nuevo (DDG): {tid}")
-                    titulo = r.get('title', 'Tweet')
-                    msg = f"🔵 *ALERTA (Vía Buscador)*\n\n📝 {titulo}\n\n🔗 {link}"
+                    msg = f"🔵 *TWITTER (Buscador)*\n\n📝 {r.get('title', 'Tweet')}\n\n🔗 {link}"
                     enviar_telegram(msg)
                     guardar_historial(tid)
                     vistos.add(tid)
                     time.sleep(2)
     except Exception as e:
-        print(f"⚠️ Error en DuckDuckGo: {e}")
+        print(f"⚠️ DDG Falló: {e}")
 
-# --- MAESTRO DE ORQUESTA ---
+# --- 3. GOOGLE NEWS ---
+def buscar_google(vistos):
+    print("--- 3. Probando Google News ---")
+    try:
+        # Busca noticias de Chacarita en Argentina
+        url = f"https://news.google.com/rss/search?q={QUERY_GOOGLE}+when:1d&hl=es-419&gl=AR&ceid=AR:es-419"
+        feed = feedparser.parse(url)
+        
+        for entry in reversed(feed.entries):
+            link = entry.link
+            if link not in vistos:
+                print(f"✅ Noticia Google: {entry.title}")
+                msg = f"📰 *NOTICIA (Google)*\n\n{entry.title}\n\n🔗 {link}"
+                enviar_telegram(msg)
+                guardar_historial(link)
+                vistos.add(link)
+                time.sleep(1)
+    except Exception as e:
+        print(f"⚠️ Google Falló: {e}")
+
 def main():
     vistos = leer_historial()
-    
-    # Ejecuta las dos estrategias
     buscar_nitter(vistos)
     buscar_ddg(vistos)
+    buscar_google(vistos)
 
 if __name__ == "__main__":
     main()
