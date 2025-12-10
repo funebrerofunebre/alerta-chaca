@@ -9,8 +9,9 @@ from bs4 import BeautifulSoup
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
 
-# Búsqueda amplia (No solo Twitter)
-QUERY_GENERAL = "Chacarita" 
+# Búsquedas
+QUERY_GENERAL = "Chacarita"  # Para Bing (Web en general)
+QUERY_GOOGLE = "Chacarita"   # Para Google News (Esta faltaba)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
