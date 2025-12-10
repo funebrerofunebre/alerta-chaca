@@ -1,0 +1,36 @@
+name: Alerta Chaca Bot
+
+on:
+  schedule:
+    - cron: '*/20 * * * *' # Ejecutar cada 20 minutos
+  workflow_dispatch: # Para poder ejecutarlo manual si querés probar
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Bajar código
+        uses: actions/checkout@v3
+      
+      - name: Instalar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Instalar librerías
+        run: pip install -r requirements.txt
+        
+      - name: Correr el Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
+        
+      - name: Guardar estado (para no repetir noticias)
+        run: |
+          git config --global user.name 'Bot Chaca'
+          git config --global user.email 'bot@noreply.github.com'
+          git add last_id.txt || true
+          git commit -m "Actualizar ultimo tweet visto" || true
+          git push
